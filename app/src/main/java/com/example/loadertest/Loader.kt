@@ -7,7 +7,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.View
-import android.view.animation.LinearInterpolator
+import android.view.animation.AccelerateDecelerateInterpolator
 import androidx.core.animation.doOnRepeat
 import kotlin.math.*
 
@@ -19,20 +19,22 @@ class Loader @JvmOverloads constructor(
 
     private var viewHeight: Float = 0f
     private var viewWidth: Float = 0f
+
     private var FIXED_RADIUS = 0f
-    private var radius: Float = 0f
     private var RADIUS_PART = 0f
-    private val PADDING = 50f
+    private val PADDING = 20f
     private val WIDTH = 20f
+
     private var CENTER_X = 0f
     private var CENTER_Y = 0f
     private var END_X = 0f
     private var END_Y = 0f
-    private var shouldDrawRectangle = false
-    private var boundaryPoints = mutableListOf<EndPoints>()
+
+    private var boundaryPoints = mutableListOf<EndPoint>()
+    private var isExpanding = true
 
     private val paint: Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.BLACK
+        color = Color.WHITE
         style = Paint.Style.FILL_AND_STROKE
         strokeJoin = Paint.Join.BEVEL
         strokeWidth = WIDTH
@@ -42,84 +44,75 @@ class Loader @JvmOverloads constructor(
         return angleInDegree * (PI / 180f)
     }
 
-    private fun dist(x1: Float, y1: Float, x2: Float, y2: Float): Float {
-        return sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1))
-    }
-
     private val valueAnimator = ValueAnimator.ofFloat(0f, 360f).apply {
-        duration = 4000
-        interpolator = LinearInterpolator()
+        duration = 1000
+        interpolator = AccelerateDecelerateInterpolator()
         repeatCount = ValueAnimator.INFINITE
         repeatMode = ValueAnimator.RESTART
 
         addUpdateListener {
-            val angleInDegree = it.animatedValue as Float
-            val angleInRadian = toRadian(angleInDegree)
-            END_X = CENTER_X + radius * cos(angleInRadian).toFloat()
-            END_Y = CENTER_Y + radius * sin(angleInRadian).toFloat()
+            val angleInDegree = String.format("%.6f", (it.animatedValue as Float)).toFloat()
+            val angleInRadian = String.format("%.6f", toRadian(angleInDegree)).toFloat()
             val roundedAngle = angleInDegree.roundToInt()
-            handleSmallRectangle(angleInDegree, roundedAngle, angleInRadian)
+            val percentageMoved = String.format("%.6f", getPercentageMoved(angleInDegree)).toFloat()
+            END_X =
+                (CENTER_X + (FIXED_RADIUS - RADIUS_PART) * percentageMoved * cos(angleInRadian))
+            END_Y =
+                (CENTER_Y + (FIXED_RADIUS - RADIUS_PART) * percentageMoved * sin(angleInRadian))
+
+            handleSmallRectangle(roundedAngle, angleInRadian, percentageMoved)
             invalidate()
         }
 
         doOnRepeat {
-            radius = FIXED_RADIUS
-            boundaryPoints.clear()
+            isExpanding = !isExpanding
         }
     }
 
-
     init {
+//        valueAnimator.start()
+    }
+
+    private fun getPercentageMoved(angleInDegree: Float): Double {
+        return if (isExpanding) {
+            angleInDegree / 360.0
+        } else {
+            1 - (angleInDegree / 360.0)
+        }
+    }
+    fun startAnimation(){
         valueAnimator.start()
     }
 
     private fun handleSmallRectangle(
-        angleInFloat: Float,
         roundedAngle: Int,
-        angleInRadian: Double
+        angleInRadian: Float,
+        percentageMoved: Float,
     ) {
-        val percentageMoved = 1 - angleInFloat / 360.0
-
-        boundaryPoints.forEach { point ->
-            point.currStartX =
-                (CENTER_X + (FIXED_RADIUS * percentageMoved - RADIUS_PART) * cos(point.angleInRadian)).toFloat()
-            point.currStartY =
-                (CENTER_Y + (FIXED_RADIUS * percentageMoved - RADIUS_PART) * sin(point.angleInRadian)).toFloat()
-            point.currEndX =
-                (CENTER_X + (FIXED_RADIUS * percentageMoved) * cos(point.angleInRadian)).toFloat()
-            point.currEndY =
-                (CENTER_Y + (FIXED_RADIUS * percentageMoved) * sin(point.angleInRadian)).toFloat()
+        val index = roundedAngle / 30
+        if (boundaryPoints.getOrNull(index) == null) {
+            val endPoint = EndPoint()
+            setEndpoint(endPoint, percentageMoved, angleInRadian)
+            boundaryPoints.add(endPoint)
         }
 
-        if (roundedAngle % 30 == 0) {
-            radius -= RADIUS_PART
-            shouldDrawRectangle = true
+        boundaryPoints.forEach { point ->
+            setEndpoint(point, percentageMoved, point.angleInRadian)
+        }
 
-            val CURRENT_START_X =
-                (CENTER_X + (FIXED_RADIUS * percentageMoved - RADIUS_PART) * cos(angleInRadian)).toFloat()
+    }
 
-            val CURRENT_START_Y =
-                (CENTER_Y + (FIXED_RADIUS * percentageMoved - RADIUS_PART) * sin(angleInRadian)).toFloat()
-
-            val CURRENT_END_X =
-                (CENTER_X + (FIXED_RADIUS * percentageMoved) * cos(angleInRadian)).toFloat()
-
-            val CURRENT_END_Y =
-                (CENTER_Y + (FIXED_RADIUS * percentageMoved) * sin(angleInRadian)).toFloat()
-
-            val index = roundedAngle / 30
-
-            if (boundaryPoints.getOrNull(index) == null) {
-                boundaryPoints.add(
-                    EndPoints(
-                        CURRENT_START_X,
-                        CURRENT_START_Y,
-                        CURRENT_END_X,
-                        CURRENT_END_Y,
-                        angleInRadian
-                    )
-                )
-            }
+    private fun setEndpoint(endPoint: EndPoint, percentageMoved: Float, angle: Float) {
+        endPoint.apply {
+            angleInRadian = angle
+            currStartX =
+                (CENTER_X + (FIXED_RADIUS * percentageMoved - RADIUS_PART) * cos(angle))
+            currStartY =
+                (CENTER_Y + (FIXED_RADIUS * percentageMoved - RADIUS_PART) * sin(angle))
+            currEndX =
+                (CENTER_X + (FIXED_RADIUS * percentageMoved) * cos(angle))
+            currEndY =
+                (CENTER_Y + (FIXED_RADIUS * percentageMoved) * sin(angle))
         }
     }
 
@@ -128,11 +121,10 @@ class Loader @JvmOverloads constructor(
         viewHeight = MeasureSpec.getSize(heightMeasureSpec).toFloat()
         viewWidth = MeasureSpec.getSize(widthMeasureSpec).toFloat()
         FIXED_RADIUS = (min(viewHeight, viewWidth) - 2 * PADDING) / 2
-        radius = FIXED_RADIUS
-        RADIUS_PART = radius / 12
+        RADIUS_PART = FIXED_RADIUS / 8
         CENTER_X = viewWidth / 2
         CENTER_Y = viewHeight / 2
-        END_X = CENTER_X + radius
+        END_X = CENTER_X
         END_Y = CENTER_Y
     }
 
@@ -149,14 +141,18 @@ class Loader @JvmOverloads constructor(
                 paint
             )
         }
+    }
 
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        boundaryPoints.clear()
     }
 }
 
-data class EndPoints(
-    var currStartX: Float,
-    var currStartY: Float,
-    var currEndX: Float,
-    var currEndY: Float,
-    var angleInRadian: Double,
+data class EndPoint(
+    var currStartX: Float = 0f,
+    var currStartY: Float = 0f,
+    var currEndX: Float = 0f,
+    var currEndY: Float = 0f,
+    var angleInRadian: Float = 0f,
 )
